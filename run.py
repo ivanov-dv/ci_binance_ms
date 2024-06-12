@@ -8,3 +8,4 @@ def main():
 if __name__ == "__main__":
     main()
     print(binance_bot.get_ticker(symbol='BTCUSDT'))
+
