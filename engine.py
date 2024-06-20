@@ -38,4 +38,4 @@ PostgreSQL
 '''
 Binance API
 '''
-binance_bot = Client(api_key=cfg.BINANCE_API_KEY, api_secret=cfg.BINANCE_API_SECRET)
+# binance_bot = Client(api_key=cfg.BINANCE_API_KEY, api_secret=cfg.BINANCE_API_SECRET)

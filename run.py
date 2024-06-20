@@ -1,4 +1,5 @@
-from engine import binance_bot
+from engine import *
+from utils.assist import Proxies
 
 
 def main():
@@ -6,6 +7,5 @@ def main():
 
 
 if __name__ == "__main__":
+    Proxies.check(cfg.PROXIES)
     main()
-    print(binance_bot.get_ticker(symbol='BTCUSDT'))
-
