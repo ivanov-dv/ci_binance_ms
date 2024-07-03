@@ -5,18 +5,20 @@ import time
 from dataclasses import dataclass
 from datetime import datetime as dt
 
+import config
+
 
 class User:
     def __init__(
             self,
-            id_telegram: int,
+            user_id: int,
             name: str,
             surname: str,
             username: str,
             date_registration,
             date_update,
             ban: bool = False):
-        self.id_telegram = id_telegram
+        self.user_id = user_id
         self.name = name
         self.surname = surname
         self.username = username
@@ -24,12 +26,8 @@ class User:
         self.date_update = date_update
         self.ban = ban
 
-    def __repr__(self):
-        return (f"User({self.id_telegram}, {self.name}, {self.surname}, {self.username},"
-                f" {self.ban}, {self.date_registration}, {self.date_update})")
-
     def __str__(self):
-        return (f"User id: {self.id_telegram}\n"
+        return (f"User id: {self.user_id}\n"
                 f"Name: {self.name}\n"
                 f"Surname: {self.surname}\n"
                 f"Username: {self.username}\n"
@@ -37,16 +35,20 @@ class User:
                 f"Date registration: {self.date_registration}\n"
                 f"Date update: {self.date_update})")
 
+    def __repr__(self):
+        return (f"User({self.user_id}, {self.name}, {self.surname}, {self.username},"
+                f" {self.ban}, {self.date_registration}, {self.date_update})")
+
     def __eq__(self, other):
         if isinstance(other, User):
-            return self.id_telegram == other.id_telegram
+            return self.user_id == other.user_id
         return False
 
     def __ne__(self, other):
         return not self == other
 
     def __hash__(self):
-        return hash(self.id_telegram)
+        return hash(self.user_id)
 
 
 class Session:
@@ -58,9 +60,6 @@ class Session:
 class Symbol:
     def __init__(self, symbol: str):
         self.symbol = symbol.upper()
-
-    def __str__(self):
-        return self.symbol
 
     def __repr__(self):
         return self.symbol
@@ -107,16 +106,19 @@ class Percent:
 @dataclass(frozen=True)
 class PercentOfPoint(Percent):
     current_price: float
+    weight: int = config.WEIGHT_REQUEST_KLINE
 
 
 @dataclass(frozen=True)
 class PercentOfTime(Percent):
     period: Period
+    weight: int = config.WEIGHT_GET_TICKER
 
 
 @dataclass(frozen=True)
 class Price:
     target_price: float
+    weight: int = config.WEIGHT_REQUEST_KLINE
 
 
 class TimeInfo:
@@ -152,9 +154,6 @@ class UserRequest(BaseRequest):
         self.way = way
         self.data_request = data_request
 
-    def __str__(self):
-        return f"UserRequest({self.symbol}, {self.data_request}, {self.way})"
-
     def __repr__(self):
         return f"UserRequest({self.symbol}, {self.data_request}, {self.way})"
 
@@ -180,9 +179,6 @@ class RequestForServer(BaseRequest):
         super().__init__()
         self.symbol = user_request.symbol
         self.data_request = user_request.data_request
-
-    def __str__(self):
-        return f"RequestForServer({self.symbol}, {self.data_request})"
 
     def __repr__(self):
         return f"RequestForServer({self.symbol}, {self.data_request})"

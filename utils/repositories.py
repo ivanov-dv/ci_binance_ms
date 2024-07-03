@@ -1,35 +1,17 @@
 import binance
 import threading
-
-import config
-
-
 from typing_extensions import Self
 
+import config
 from utils.models import *
 from utils.patterns import PatternSingleton, RepositoryDB
-
-
-class SessionRepository(RepositoryDB, PatternSingleton):
-    sessions = {}
-
-    def _add(self, session: Session):
-        pass
-
-    def _delete(self, session: Session):
-        pass
-
-    def get(self, session: Session):
-        pass
-
-    def update(self, session: Session):
-        pass
 
 
 class RequestRepository(RepositoryDB, PatternSingleton):
     user_requests: dict[int, set[UserRequest]] = {}
     unique_user_requests: dict[UserRequest, set[int]] = {}
     unique_requests_for_server: set[RequestForServer] = set()
+    requests_weight: int = 0
 
     def _delete_unique_user_request(self, user_id: int, request: UserRequest) -> None:
         if request in self.unique_user_requests:
@@ -70,91 +52,19 @@ class RequestRepository(RepositoryDB, PatternSingleton):
         self.user_requests[user_id] = set(list_requests)
         return self
 
-    def get(self, user_id: int, request: UserRequest) -> UserRequest | None:
-        return request if user_id in self.user_requests and request in self.user_requests[user_id] else None
-
-    def get_all_for_user_id(self, user_id: int) -> set[UserRequest] | None:
-        return self.user_requests[user_id] if user_id in self.user_requests else None
-
     def do_unique_requests_for_server(self) -> set[RequestForServer]:
         """
         Создает словарь с уникальными запросами (без дублей) на API.
-        Сортирует запросы по ключам TypeRequest.percent и TypedRequest.price.
 
         :return: Set[RequestForServer]
         """
 
-        self.unique_requests_for_server = set(map(RequestForServer, self.unique_user_requests.keys()))
+        self.unique_requests_for_server = set()
+        self.requests_weight = 0
+
+        for request in self.unique_user_requests.keys():
+            if not RequestForServer(request) in self.unique_requests_for_server:
+                self.unique_requests_for_server.add(RequestForServer(request))
+                self.requests_weight += request.data_request.weight
 
         return self.unique_requests_for_server
-
-
-class ResponseRepository(RepositoryDB, PatternSingleton):
-
-    def __init__(self, db, client: binance.Client):
-        super().__init__(db)
-        self.client = client
-        self.response = None
-
-    def _get_response_price_or_percent_of_point(self, request: RequestForServer) -> None:
-        for _ in range(config.TRY_GET_RESPONSE):
-            try:
-                response = self.client.get_klines(
-                    symbol=request.symbol,
-                    interval=config.INTERVAL_FOR_PRICE_REQUEST,
-                    limit=config.LIMIT_FOR_PRICE_REQUEST
-                )
-                list_response = [ResponseKline(*map(float, i[:11])) for i in response]
-                self.response[TypeRequest.price].update({request.symbol: list_response})
-                break
-            except Exception as e:
-                time.sleep(config.TIMEOUT_BETWEEN_RESPONSE)
-                str(e)
-                continue
-
-    def _get_response_percent_of_time(self, request: RequestForServer) -> None:
-        for _ in range(config.TRY_GET_RESPONSE):
-            try:
-                response = self.client.get_ticker(symbol=request.symbol)
-                if not (request.symbol in response):
-                    self.response[TypeRequest.period].update({request.symbol: {}})
-                self.response[TypeRequest.period][request.symbol].update(
-                    {request.data_request.period: ResponseGetTicker(response)}
-                )
-                break
-            except Exception as e:
-                time.sleep(config.TIMEOUT_BETWEEN_RESPONSE)
-                str(e)
-                continue
-
-    def get_response_from_server(
-            self,
-            requests: set[RequestForServer]
-    ) -> dict[TypeRequest, {str, list[ResponseKline]} | {str, dict[Period, ResponseGetTicker]}]:
-        """
-        Получает ответы от сервера по множеству запросов в многопоточном режиме.
-
-        Args:
-            requests: Перечень уникальных запросов на сервер в виде множества set.
-
-        Returns: Ответ сервера в Dict
-        """
-
-        tasks = []
-        self.response = {TypeRequest.price: {}, TypeRequest.period: {}}
-
-        for request in requests:
-            if isinstance(request.data_request, (Price, PercentOfPoint)):
-                t = threading.Thread(target=self._get_response_price_or_percent_of_point, args=(request,))
-                tasks.append(t)
-            if isinstance(request.data_request, PercentOfTime) and request.data_request.period == Period.v_24h:
-                t = threading.Thread(target=self._get_response_percent_of_time, args=(request,))
-                tasks.append(t)
-
-        for task in tasks:
-            task.start()
-            time.sleep(config.THREAD_INTERVAL_BETWEEN_RESPONSE)
-        for task in tasks:
-            task.join()
-
-        return self.response

@@ -104,12 +104,67 @@ class TestRepositories:
         assert self.request_repo.user_requests == res_user_requests_delete
         assert self.request_repo.unique_user_requests == res_unique_delete
 
+
+class TestMonitoring:
+
+    request_repo = RequestRepository('db')
+
+    class Client:
+        pass
+
+    ex_monitoring = Monitoring(Client())
+
+    def test_check_all_changes(self):
+        user_requests = (
+            UserRequest(Symbol('BTCUSDT'), PercentOfPoint(5, 66000), Way.all),
+            UserRequest(Symbol('BTCUSDT'), PercentOfPoint(10, 60000), Way.all),
+            UserRequest(Symbol('BTCUSDT'), PercentOfPoint(10, 60000), Way.down_to),
+            UserRequest(Symbol('BTCUSDT'), PercentOfPoint(10, 66000), Way.down_to),
+            UserRequest(Symbol('BTCUSDT'), PercentOfPoint(10, 60000), Way.up_to),
+            UserRequest(Symbol('BTCUSDT'), PercentOfPoint(10, 66000), Way.up_to),
+            UserRequest(Symbol('BTCUSDT'), Price(65000), Way.up_to),
+            UserRequest(Symbol('BTCUSDT'), Price(65000), Way.down_to),
+            UserRequest(Symbol('BTCUSDT'), PercentOfTime(1, Period.v_24h), Way.all),
+            UserRequest(Symbol('BTCUSDT'), PercentOfTime(1, Period.v_24h), Way.up_to),
+            UserRequest(Symbol('BTCUSDT'), PercentOfTime(1, Period.v_24h), Way.down_to),
+            UserRequest(Symbol('BTCUSDT'), PercentOfTime(5, Period.v_24h), Way.all),
+            UserRequest(Symbol('BTCUSDT'), PercentOfTime(5, Period.v_24h), Way.up_to),
+            UserRequest(Symbol('BTCUSDT'), PercentOfTime(5, Period.v_24h), Way.down_to),
+        )
+        resp_klines = [[1718161020000, '67416.05000000', '67424.00000000', '67403.47000000', '67423.99000000', '16.27187000', 1718161079999, '1096929.92503660', 953, '14.05869000', '947727.05331980', '0'], [1718161080000, '67423.99000000', '67424.00000000', '67390.00000000', '67412.88000000', '17.88840000', 1718161139999, '1205803.03555260', 619, '11.85720000', '799239.09187210', '0'], [1718161140000, '67412.89000000', '67415.26000000', '67412.89000000', '67415.26000000', '0.82518000', 1718161199999, '55629.70425540', 105, '0.74282000', '50077.38426540', '0']]
+        list_response = [ResponseKline(*map(float, i[:11])) for i in resp_klines]
+        resp_get_ticker = {'symbol': 'BTCUSDT', 'priceChange': '-792.24000000', 'priceChangePercent': '-1.161', 'weightedAvgPrice': '67209.61946402', 'prevClosePrice': '68228.73000000', 'lastPrice': '67436.48000000', 'lastQty': '0.00013000', 'bidPrice': '67436.47000000', 'bidQty': '4.21751000', 'askPrice': '67436.48000000', 'askQty': '5.53934000', 'openPrice': '68228.72000000', 'highPrice': '68488.00000000', 'lowPrice': '66051.00000000', 'volume': '36978.88700000', 'quoteVolume': '2485336923.47281260', 'openTime': 1718074837077, 'closeTime': 1718161237077, 'firstId': 3630981707, 'lastId': 3632578416, 'count': 1596710}
+        response_from_server = {
+            TypeRequest.price:
+                {
+                    Symbol('BTCUSDT'):
+                        list_response
+                },
+            TypeRequest.period:
+                {
+                    Symbol('BTCUSDT'):
+                        {
+                            Period.v_24h:
+                                ResponseGetTicker(resp_get_ticker)
+                        }
+                }
+        }
+        res_monitoring = self.ex_monitoring.check_all_changes(user_requests, response_from_server)
+        res = {
+            UserRequest(Symbol('BTCUSDT'), PercentOfPoint(10, 60000), Way.all),
+            UserRequest(Symbol('BTCUSDT'), PercentOfPoint(10, 60000), Way.up_to),
+            UserRequest(Symbol('BTCUSDT'), Price(65000), Way.up_to),
+            UserRequest(Symbol('BTCUSDT'), PercentOfTime(1, Period.v_24h), Way.all),
+            UserRequest(Symbol('BTCUSDT'), PercentOfTime(1, Period.v_24h), Way.down_to)
+        }
+        assert res_monitoring == res
+
     def test_response(self):
         self.request_repo.user_requests = {}
         self.request_repo.unique_user_requests = {}
 
         from engine import binance_bot
-        resp_repo = ResponseRepository('123', binance_bot)
+        monitoring = Monitoring(binance_bot)
         self.request_repo.add(8866, UserRequest(Symbol('BTCUSDT'), PercentOfTime(20, Period.v_24h), Way.up_to))
         self.request_repo.add(8866, UserRequest(Symbol('ETHUSDT'), PercentOfTime(10, Period.v_24h), Way.up_to))
         self.request_repo.add(8866, UserRequest(Symbol('ETHUSDT'), PercentOfPoint(10, 3600), Way.up_to))
@@ -191,7 +246,7 @@ class TestRepositories:
         self.request_repo.add(8866, UserRequest(Symbol('CFXusdt'), Price(100), Way.up_to))
         self.request_repo.add(8866, UserRequest(Symbol('GRTusdt'), Price(0.1), Way.down_to))
         requests_for_server = self.request_repo.do_unique_requests_for_server()
-        res = resp_repo.get_response_from_server(requests_for_server)
+        res = monitoring.get_response_from_server(requests_for_server)
 
         for req in requests_for_server:
             if isinstance(req.data_request, (Price, PercentOfPoint)):
@@ -199,55 +254,3 @@ class TestRepositories:
             if isinstance(req.data_request, PercentOfTime):
                 assert req.symbol in res[TypeRequest.period]
                 assert req.data_request.period in res[TypeRequest.period][req.symbol]
-
-
-class TestMonitoring:
-    class Client:
-        pass
-
-    ex_monitoring = Monitoring(Client())
-
-    def test_check_all_changes(self):
-        user_requests = (
-            UserRequest(Symbol('BTCUSDT'), PercentOfPoint(5, 66000), Way.all),
-            UserRequest(Symbol('BTCUSDT'), PercentOfPoint(10, 60000), Way.all),
-            UserRequest(Symbol('BTCUSDT'), PercentOfPoint(10, 60000), Way.down_to),
-            UserRequest(Symbol('BTCUSDT'), PercentOfPoint(10, 66000), Way.down_to),
-            UserRequest(Symbol('BTCUSDT'), PercentOfPoint(10, 60000), Way.up_to),
-            UserRequest(Symbol('BTCUSDT'), PercentOfPoint(10, 66000), Way.up_to),
-            UserRequest(Symbol('BTCUSDT'), Price(65000), Way.up_to),
-            UserRequest(Symbol('BTCUSDT'), Price(65000), Way.down_to),
-            UserRequest(Symbol('BTCUSDT'), PercentOfTime(1, Period.v_24h), Way.all),
-            UserRequest(Symbol('BTCUSDT'), PercentOfTime(1, Period.v_24h), Way.up_to),
-            UserRequest(Symbol('BTCUSDT'), PercentOfTime(1, Period.v_24h), Way.down_to),
-            UserRequest(Symbol('BTCUSDT'), PercentOfTime(5, Period.v_24h), Way.all),
-            UserRequest(Symbol('BTCUSDT'), PercentOfTime(5, Period.v_24h), Way.up_to),
-            UserRequest(Symbol('BTCUSDT'), PercentOfTime(5, Period.v_24h), Way.down_to),
-        )
-        resp_klines = [[1718161020000, '67416.05000000', '67424.00000000', '67403.47000000', '67423.99000000', '16.27187000', 1718161079999, '1096929.92503660', 953, '14.05869000', '947727.05331980', '0'], [1718161080000, '67423.99000000', '67424.00000000', '67390.00000000', '67412.88000000', '17.88840000', 1718161139999, '1205803.03555260', 619, '11.85720000', '799239.09187210', '0'], [1718161140000, '67412.89000000', '67415.26000000', '67412.89000000', '67415.26000000', '0.82518000', 1718161199999, '55629.70425540', 105, '0.74282000', '50077.38426540', '0']]
-        list_response = [ResponseKline(*map(float, i[:11])) for i in resp_klines]
-        resp_get_ticker = {'symbol': 'BTCUSDT', 'priceChange': '-792.24000000', 'priceChangePercent': '-1.161', 'weightedAvgPrice': '67209.61946402', 'prevClosePrice': '68228.73000000', 'lastPrice': '67436.48000000', 'lastQty': '0.00013000', 'bidPrice': '67436.47000000', 'bidQty': '4.21751000', 'askPrice': '67436.48000000', 'askQty': '5.53934000', 'openPrice': '68228.72000000', 'highPrice': '68488.00000000', 'lowPrice': '66051.00000000', 'volume': '36978.88700000', 'quoteVolume': '2485336923.47281260', 'openTime': 1718074837077, 'closeTime': 1718161237077, 'firstId': 3630981707, 'lastId': 3632578416, 'count': 1596710}
-        response_from_server = {
-            TypeRequest.price:
-                {
-                    Symbol('BTCUSDT'):
-                        list_response
-                },
-            TypeRequest.period:
-                {
-                    Symbol('BTCUSDT'):
-                        {
-                            Period.v_24h:
-                                ResponseGetTicker(resp_get_ticker)
-                        }
-                }
-        }
-        res_monitoring = self.ex_monitoring.check_all_changes(user_requests, response_from_server)
-        res = {
-            UserRequest(Symbol('BTCUSDT'), PercentOfPoint(10, 60000), Way.all),
-            UserRequest(Symbol('BTCUSDT'), PercentOfPoint(10, 60000), Way.up_to),
-            UserRequest(Symbol('BTCUSDT'), Price(65000), Way.up_to),
-            UserRequest(Symbol('BTCUSDT'), PercentOfTime(1, Period.v_24h), Way.all),
-            UserRequest(Symbol('BTCUSDT'), PercentOfTime(1, Period.v_24h), Way.down_to)
-        }
-        assert res_monitoring == res

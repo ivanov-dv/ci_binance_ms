@@ -1,8 +1,20 @@
-import logging
-
 import binance
+import logging
+import threading
+import time
 
-from utils.models import *
+import config
+from utils.models import (
+    UserRequest,
+    TypeRequest,
+    Way,
+    Symbol,
+    ResponseKline,
+    Period,
+    ResponseGetTicker,
+    Price,
+    PercentOfPoint,
+    PercentOfTime, RequestForServer)
 
 
 class Monitoring:
@@ -10,8 +22,8 @@ class Monitoring:
     Класс для осуществления мониторинга запросов пользователей.
     """
 
-    def __init__(self, bot: binance.Client):
-        self.bot = bot
+    def __init__(self, client: binance.Client):
+        self.client = client
         self.response_from_server = None
 
     def _price_check_change(self, request: UserRequest, response: dict) -> UserRequest | None:
@@ -59,7 +71,38 @@ class Monitoring:
         except Exception as e:
             logging.exception(f'{self.__class__.__qualname__} - {e}')
 
-    def check_change(
+    def _get_response_price_or_percent_of_point(self, request: RequestForServer) -> None:
+        for _ in range(config.TRY_GET_RESPONSE):
+            try:
+                response = self.client.get_klines(
+                    symbol=request.symbol,
+                    interval=config.INTERVAL_FOR_PRICE_REQUEST,
+                    limit=config.LIMIT_FOR_PRICE_REQUEST
+                )
+                list_response = [ResponseKline(*map(float, i[:11])) for i in response]
+                self.response_from_server[TypeRequest.price].update({request.symbol: list_response})
+                break
+            except Exception as e:
+                time.sleep(config.TIMEOUT_BETWEEN_RESPONSE)
+                str(e)
+                continue
+
+    def _get_response_percent_of_time(self, request: RequestForServer) -> None:
+        for _ in range(config.TRY_GET_RESPONSE):
+            try:
+                response = self.client.get_ticker(symbol=request.symbol)
+                if not (request.symbol in response):
+                    self.response_from_server[TypeRequest.period].update({request.symbol: {}})
+                self.response_from_server[TypeRequest.period][request.symbol].update(
+                    {request.data_request.period: ResponseGetTicker(response)}
+                )
+                break
+            except Exception as e:
+                time.sleep(config.TIMEOUT_BETWEEN_RESPONSE)
+                str(e)
+                continue
+
+    def _check_change(
             self,
             request: UserRequest,
             response_from_server: dict[TypeRequest, {Symbol, ResponseKline} | {Symbol, dict[Period, ResponseGetTicker]}]
@@ -85,21 +128,54 @@ class Monitoring:
 
     def check_all_changes(
             self,
-            requests: tuple | list,
-            response_from_server: dict[TypeRequest, {Symbol, ResponseKline} | {Symbol, dict[Period, ResponseGetTicker]}]
+            user_requests: tuple | list,
+            response_from_server: dict[TypeRequest, {str, list[ResponseKline]} | {str, dict[Period, ResponseGetTicker]}]
     ):
         """
         Проверяет все запросы на изменение.
 
         Args:
-            requests: Список или кортеж запросов
-            response_from_server: Ответ сервера в Dict
+            user_requests: Список или кортеж запросов
+            response_from_server: Ответ сервера в Dict.
 
         Returns: Возвращает множество Set с запросами, достигшими необходимых значений.
         """
 
         res = set()
-        for request in requests:
-            if self.check_change(request, response_from_server) is not None:
+
+        for request in user_requests:
+            if self._check_change(request, response_from_server):
                 res.add(request)
         return res
+
+    def get_response_from_server(
+            self,
+            requests_for_server: set[RequestForServer]
+    ) -> dict[TypeRequest, {str, list[ResponseKline]} | {str, dict[Period, ResponseGetTicker]}]:
+        """
+        Получает ответы от сервера по множеству запросов в многопоточном режиме.
+
+        Args:
+            requests_for_server: Перечень уникальных запросов на сервер в виде множества set.
+
+        Returns: Ответ сервера в Dict
+        """
+
+        tasks = []
+        self.response_from_server = {TypeRequest.price: {}, TypeRequest.period: {}}
+
+        for request in requests_for_server:
+            if isinstance(request.data_request, (Price, PercentOfPoint)):
+                t = threading.Thread(target=self._get_response_price_or_percent_of_point, args=(request,))
+                tasks.append(t)
+            if isinstance(request.data_request, PercentOfTime) and request.data_request.period == Period.v_24h:
+                t = threading.Thread(target=self._get_response_percent_of_time, args=(request,))
+                tasks.append(t)
+
+        for task in tasks:
+            task.start()
+            time.sleep(config.THREAD_INTERVAL_BETWEEN_RESPONSE)
+        for task in tasks:
+            task.join()
+
+        return self.response_from_server
