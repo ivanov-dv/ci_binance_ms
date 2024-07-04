@@ -1,13 +1,10 @@
-import binance
-import threading
 from typing_extensions import Self
 
-import config
 from utils.models import *
-from utils.patterns import PatternSingleton, RepositoryDB
+from utils.patterns import PatternSingleton
 
 
-class RequestRepository(RepositoryDB, PatternSingleton):
+class RequestRepository(PatternSingleton):
     user_requests: dict[int, set[UserRequest]] = {}
     unique_user_requests: dict[UserRequest, set[int]] = {}
     unique_requests_for_server: set[RequestForServer] = set()
