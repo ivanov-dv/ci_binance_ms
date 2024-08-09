@@ -1,67 +1,47 @@
-from typing_extensions import Self
+import asyncio
 
-from utils.models import *
+import httpx
+
+from config import REPO_HOST
+from utils.models import UniqueUserRequest, RequestForServer
 from utils.patterns import PatternSingleton
 
 
-class RequestRepository(PatternSingleton):
-    user_requests: dict[int, set[UserRequest]] = {}
-    unique_user_requests: dict[UserRequest, set[int]] = {}
-    unique_requests_for_server: set[RequestForServer] = set()
+class Requests:
+    @staticmethod
+    async def get(endpoint: str):
+        async with httpx.AsyncClient() as client:
+            return await client.get(endpoint)
+
+    @staticmethod
+    async def post(endpoint: str, data):
+        async with httpx.AsyncClient() as client:
+            return await client.post(endpoint, data=data)
+
+    @staticmethod
+    async def put(endpoint: str, data):
+        async with httpx.AsyncClient() as client:
+            return await client.put(endpoint, data=data)
+
+    @staticmethod
+    async def delete(endpoint: str):
+        async with httpx.AsyncClient() as client:
+            return await client.delete(endpoint)
+
+
+class Repository(PatternSingleton):
+    unique_user_requests: list[UniqueUserRequest] = []
+    unique_requests_for_server: list[RequestForServer] = []
     requests_weight: int = 0
 
-    def _delete_unique_user_request(self, user_id: int, request: UserRequest) -> None:
-        if request in self.unique_user_requests:
-            self.unique_user_requests[request].discard(user_id)
-            if not self.unique_user_requests[request]:
-                self.unique_user_requests.pop(request, None)
+    async def load_requests_from_remote_repo(self):
+        unique_user_requests = await Requests.get(f'{REPO_HOST}/requests/unique/')
+        unique_requests_for_server = await Requests.get(f'{REPO_HOST}/requests/server/')
+        self.unique_user_requests = [UniqueUserRequest(**req) for req in unique_user_requests.json()]
+        self.unique_requests_for_server = [RequestForServer(**req) for req in unique_requests_for_server.json()]
 
-    def add(self, user_id: int, request: UserRequest) -> Self:
-
-        if user_id in self.user_requests:
-            self.user_requests[user_id].add(request)
-        else:
-            self.user_requests.update({user_id: {request}})
-
-        if request in self.unique_user_requests:
-            self.unique_user_requests[request].add(user_id)
-        else:
-            self.unique_user_requests.update({request: {user_id}})
-
-        return self
-
-    def delete(self, user_id: int, request: UserRequest) -> Self:
-        if user_id in self.user_requests:
-            self.user_requests[user_id].discard(request)
-            if not self.user_requests[user_id]:
-                self.user_requests.pop(user_id, None)
-        self._delete_unique_user_request(user_id, request)
-        return self
-
-    def update_time_request(self, user_id: int, request: UserRequest) -> Self:
-        """
-        Обновляет время изменения запроса.
-        """
-
-        list_requests = list(self.user_requests[user_id])
-        list_requests[list_requests.index(request)].time_info.update_time = dt.utcnow()
-        list_requests[list_requests.index(request)].time_info.update_time_unix = time.time()
-        self.user_requests[user_id] = set(list_requests)
-        return self
-
-    def do_unique_requests_for_server(self) -> set[RequestForServer]:
-        """
-        Создает словарь с уникальными запросами (без дублей) на API.
-
-        :return: Set[RequestForServer]
-        """
-
-        self.unique_requests_for_server = set()
-        self.requests_weight = 0
-
-        for request in self.unique_user_requests.keys():
-            if not RequestForServer(request) in self.unique_requests_for_server:
-                self.unique_requests_for_server.add(RequestForServer(request))
-                self.requests_weight += request.data_request.weight
-
+    async def get_unique_requests_for_server(self):
         return self.unique_requests_for_server
+
+    async def get_unique_user_requests(self):
+        return self.unique_user_requests

@@ -107,7 +107,7 @@ class TestRepositories:
 
 class TestMonitoring:
 
-    request_repo = RequestRepository('db')
+    request_repo = Repository('db')
 
     class Client:
         pass
