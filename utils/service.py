@@ -6,6 +6,8 @@ from functools import partial
 import binance
 import logging
 
+import httpx
+
 import config
 from utils.models import (
     UniqueUserRequest,
@@ -240,7 +242,12 @@ class Monitoring:
             self._start = time.time()
             self.count_iteration += 1
 
-            await self.repo.load_requests_from_remote_repo()
+            try:
+                await self.repo.load_requests_from_remote_repo()
+            except httpx.ConnectError:
+                logging.error('Error load_requests_from_remote_repo. Retrying...')
+                continue
+
             user_requests = await self.repo.get_unique_user_requests()
             self.len_unique_requests_user = len(user_requests)
             unique_requests_for_server = await self.repo.get_unique_requests_for_server()
@@ -254,7 +261,7 @@ class Monitoring:
                         continue
                     for user in users:
                         try:
-                            await self.broker.send_message(f'{user} {request.request_id}')
+                            await self.broker.send_message(f'{user}__{str(request)}')
                         except Exception as e:
                             logging.error(f'Error send message in RabbitMQ {user} {request.request_id}: {e}')
                         else:
