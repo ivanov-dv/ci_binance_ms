@@ -43,3 +43,13 @@ class Repository(PatternSingleton):
 
     async def get_unique_user_requests(self):
         return self.unique_user_requests
+
+    @staticmethod
+    async def get_users_for_request(request_id: int):
+        res = await Requests.get(f'{REPO_HOST}/users/requests/{request_id}')
+        return res.json()
+
+    @staticmethod
+    async def delete_request_for_user(user_id, request_id):
+        res = await Requests.delete(f'{REPO_HOST}/requests/{user_id}?request_id={request_id}')
+        return res

@@ -26,7 +26,7 @@ class RabbitMq:
                 await channel.declare_queue(self.queue_name, durable=True)
                 await channel.default_exchange.publish(
                     aio_pika.Message(
-                        body=f"Hello {self.queue_name}".encode(), delivery_mode=aio_pika.DeliveryMode.PERSISTENT
+                        body=message.encode(), delivery_mode=aio_pika.DeliveryMode.PERSISTENT
                     ),
                     routing_key=self.queue_name,
                 )
@@ -36,9 +36,3 @@ class RabbitMq:
             await self.connect()
             await self.send_message(message)
 
-
-rab = RabbitMq('quest1', 'quest1', 'ci_test')
-
-if __name__ == '__main__':
-    import asyncio
-    asyncio.run(rab.send_message('test'))

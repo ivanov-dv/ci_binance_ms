@@ -249,4 +249,9 @@ class Monitoring:
 
             for request in user_requests:
                 if await self._check_change(request, response_from_server):
-                    await self.broker.send_message(request.request_id)
+                    users = await self.repo.get_users_for_request(request.request_id)
+                    if not users:
+                        continue
+                    for user in users:
+                        await self.broker.send_message(f'{user} {request.request_id}')
+                        await self.repo.delete_request_for_user(user, request.request_id)
