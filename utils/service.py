@@ -253,5 +253,9 @@ class Monitoring:
                     if not users:
                         continue
                     for user in users:
-                        await self.broker.send_message(f'{user} {request.request_id}')
-                        await self.repo.delete_request_for_user(user, request.request_id)
+                        try:
+                            await self.broker.send_message(f'{user} {request.request_id}')
+                        except Exception as e:
+                            logging.error(f'Error send message in RabbitMQ {user} {request.request_id}: {e}')
+                        else:
+                            await self.repo.delete_request_for_user(user, request.request_id)
