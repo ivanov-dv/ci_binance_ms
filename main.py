@@ -1,4 +1,7 @@
 import asyncio
+import logging
+
+from fastapi import HTTPException
 
 from engine import app, monitoring
 
@@ -12,12 +15,21 @@ async def on_startup():
 
 @app.get('/prices/{ticker}')
 async def get_current_price(ticker: str):
-    return await monitoring.get_ticker_price(ticker.upper())
+    try:
+        return await monitoring.get_ticker_price(ticker.upper())
+    except Exception as e:
+        logging.error(f'get_current_price error: {e}')
+        raise HTTPException(status_code=500, detail=f'get_current_price error: {e}')
 
 
 @app.get('/tickers')
 async def get_tickers():
     return monitoring.list_tickers
+
+
+@app.get('/metrics')
+async def get_metrics():
+    return await monitoring.get_metrics()
 
 
 if __name__ == "__main__":

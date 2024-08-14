@@ -1,5 +1,3 @@
-import asyncio
-
 import httpx
 
 from config import REPO_HOST

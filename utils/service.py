@@ -1,5 +1,5 @@
 import asyncio
-import datetime
+import time
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 
@@ -17,6 +17,7 @@ from utils.models import (
     Price,
     PercentOfPoint,
     PercentOfTime, TypeRequest)
+from utils.rabbitmq import RabbitMq
 from utils.repositories import Repository
 
 
@@ -25,17 +26,36 @@ class Monitoring:
     Класс для мониторинга запросов пользователей.
     """
 
-    def __init__(self, client: binance.Client, repo: Repository):
+    def __init__(self, client: binance.Client, repo: Repository, broker: RabbitMq):
+        self._start = 0
         self.client = client
+        self.broker = broker
         self.repo = repo
         self.response_from_server = None
-        self.cumulative_weight = 0
+        self.cumulative_weight_monitoring = 0
+        self.cumulative_weight_price = 0
+        self.count_iteration = 0
         self.price_all_tickers = {}
         self.list_tickers = set()
+        self.len_unique_requests_user = 0
+        self.len_unique_requests_server = 0
 
-    async def get_ticker_price(self, ticker: str) -> float:
+    async def get_metrics(self):
+        return {'count_iteration': self.count_iteration,
+                '_start': self._start,
+                'cumulative_weight_monitoring': self.cumulative_weight_monitoring,
+                'cumulative_weight_price': self.cumulative_weight_price,
+                'len_tickers': len(self.list_tickers),
+                'len_unique_requests_user': self.len_unique_requests_user,
+                'len_unique_requests_server': self.len_unique_requests_server}
+
+    async def get_ticker_price(self, ticker: str) -> float | str:
         loop = asyncio.get_event_loop()
         with ThreadPoolExecutor() as pool:
+            if self.cumulative_weight_price > config.CUMULATIVE_WEIGHT_THROTTLING_PRICE:
+                logging.warning('Throttling get price')
+                return 'Слишком большая нагрузка, попробуйте подождать несколько секунд.'
+            self.cumulative_weight_price += config.WEIGHT_PRICE
             data = await loop.run_in_executor(pool, partial(self.client.get_ticker, symbol=ticker))
             return float(data['lastPrice'])
 
@@ -43,17 +63,20 @@ class Monitoring:
         while True:
             loop = asyncio.get_event_loop()
             with ThreadPoolExecutor() as pool:
-                tickers_data = await loop.run_in_executor(pool, self.client.get_all_tickers)
-                for ticker_data in tickers_data:
-                    if ticker_data['symbol'].endswith('USDT'):
-                        self.list_tickers.add(ticker_data['symbol'])
+                try:
+                    tickers_data = await loop.run_in_executor(pool, self.client.get_all_tickers)
+                    for ticker_data in tickers_data:
+                        if ticker_data['symbol'].endswith('USDT'):
+                            self.list_tickers.add(ticker_data['symbol'])
+                except Exception as e:
+                    logging.error(f'get_list_tickers error: {e}')
             await asyncio.sleep(86400)
 
     async def reset_weight(self):
         while True:
             await asyncio.sleep(61)
-            print('reset_weight')
-            self.cumulative_weight = 0
+            self.cumulative_weight_monitoring = 0
+            self.cumulative_weight_price = 0
 
     async def _price_check_change(self, request: UniqueUserRequest, response: dict) -> UniqueUserRequest | None:
         try:
@@ -67,7 +90,7 @@ class Monitoring:
                 if request.request_data.target_price >= min_price:
                     return request
         except Exception as e:
-            logging.exception(f'{self.__class__.__qualname__} - {e}')
+            logging.error(f'{self.__class__.__qualname__} - {e}')
 
     async def _percent_of_point_check_change(self, request: UniqueUserRequest,
                                              response: dict) -> UniqueUserRequest | None:
@@ -84,7 +107,7 @@ class Monitoring:
                 if delta / request.request_data.current_price * 100 >= request.request_data.target_percent:
                     return request
         except Exception as e:
-            logging.exception(f'{self.__class__.__qualname__} - {e}')
+            logging.error(f'{self.__class__.__qualname__} - {e}')
 
     async def _percent_of_time_check_change(self, request: UniqueUserRequest,
                                             response: dict) -> UniqueUserRequest | None:
@@ -100,17 +123,17 @@ class Monitoring:
                 if abs(ticker.price_change_percent) >= request.request_data.target_percent:
                     return request
         except Exception as e:
-            logging.exception(f'{self.__class__.__qualname__} - {e}')
+            logging.error(f'{self.__class__.__qualname__} - {e}')
 
     async def _get_response_price_or_percent_of_point(self, request: RequestForServer, delay: float) -> None:
         await asyncio.sleep(delay)
         loop = asyncio.get_event_loop()
         with ThreadPoolExecutor() as pool:
             for _ in range(config.TRY_GET_RESPONSE):
-                while self.cumulative_weight > config.CUMULATIVE_WEIGHT_THROTTLING:
-                    print('throttling')
-                    await asyncio.sleep(1)
-                self.cumulative_weight += request.request_data.weight
+                while self.cumulative_weight_monitoring > config.CUMULATIVE_WEIGHT_THROTTLING_MONITORING:
+                    logging.warning('Throttling monitoring')
+                    await asyncio.sleep(5)
+                self.cumulative_weight_monitoring += request.request_data.weight
                 try:
                     response = await loop.run_in_executor(pool, partial(self.client.get_klines,
                                                                         symbol=request.symbol,
@@ -121,7 +144,7 @@ class Monitoring:
                     break
                 except Exception as e:
                     await asyncio.sleep(config.TIMEOUT_BETWEEN_RESPONSE)
-                    print(e)
+                    logging.error(f'_get_response_price_or_percent_of_point error: {e}')
                     continue
 
     async def _get_response_percent_of_time(self, request: RequestForServer, delay: float) -> None:
@@ -129,10 +152,10 @@ class Monitoring:
         loop = asyncio.get_event_loop()
         with ThreadPoolExecutor() as pool:
             for _ in range(config.TRY_GET_RESPONSE):
-                while self.cumulative_weight > config.CUMULATIVE_WEIGHT_THROTTLING:
-                    print('throttling')
-                    await asyncio.sleep(1)
-                self.cumulative_weight += request.request_data.weight
+                while self.cumulative_weight_monitoring > config.CUMULATIVE_WEIGHT_THROTTLING_MONITORING:
+                    logging.warning('Throttling monitoring')
+                    await asyncio.sleep(5)
+                self.cumulative_weight_monitoring += request.request_data.weight
                 try:
                     response = await loop.run_in_executor(pool, partial(self.client.get_ticker,
                                                                         symbol=request.symbol))
@@ -143,15 +166,11 @@ class Monitoring:
                     )
                     break
                 except Exception as e:
+                    logging.error(f'_get_response_percent_of_time error: {e}')
                     await asyncio.sleep(config.TIMEOUT_BETWEEN_RESPONSE)
-                    str(e)
                     continue
 
-    async def _check_change(
-            self,
-            request: UniqueUserRequest,
-            response_from_server: dict
-    ):
+    async def _check_change(self, request: UniqueUserRequest, response_from_server: dict):
         """
         Проверяет один запрос на изменение.
 
@@ -161,6 +180,7 @@ class Monitoring:
 
         Returns: Возвращает запрос, если он достиг или превысил значения.
         """
+
         if isinstance(request.request_data, Price):
             return await self._price_check_change(request, response_from_server)
         if isinstance(request.request_data, PercentOfPoint):
@@ -209,25 +229,24 @@ class Monitoring:
 
     async def check_all_changes(self):
         """
-        Запускает мониторинг запросов
+        Запускает мониторинг запросов не чаще 1 раза в минуту
         """
 
         while True:
-            res = []
+            if time.time() - self._start < 60:
+                await asyncio.sleep(1)
+                continue
+
+            self._start = time.time()
+            self.count_iteration += 1
 
             await self.repo.load_requests_from_remote_repo()
             user_requests = await self.repo.get_unique_user_requests()
+            self.len_unique_requests_user = len(user_requests)
             unique_requests_for_server = await self.repo.get_unique_requests_for_server()
+            self.len_unique_requests_server = len(unique_requests_for_server)
             response_from_server = await self.get_response_from_server(unique_requests_for_server)
-
-            print(user_requests)
-            print(unique_requests_for_server)
-            print(response_from_server)
 
             for request in user_requests:
                 if await self._check_change(request, response_from_server):
-                    res.append(request)
-
-            print(res)
-            await asyncio.sleep(1)
-            # TODO: отправка в RabbitMQ
+                    await self.broker.send_message(request.request_id)
