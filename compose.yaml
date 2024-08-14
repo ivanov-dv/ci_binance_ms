@@ -1,0 +1,11 @@
+services:
+  ci_binance_ms:
+    container_name: ci_binance_ms
+    env_file:
+      - .env
+    build:
+      context: .
+    network_mode: host
+    restart: always
+    ports:
+      - 8002:8002
