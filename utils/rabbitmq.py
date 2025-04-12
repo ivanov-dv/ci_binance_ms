@@ -12,7 +12,7 @@ class RabbitMq:
         self.queue_name = queue_name
         self.host = host
         self.port = port
-        self.url = f'amqp://{self.host}:{port}/'
+        self.url = f'amqp://{user}:{password}@{host}:{port}/'
         self.connection = None
 
     async def connect(self):
