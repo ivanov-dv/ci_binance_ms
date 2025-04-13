@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: ci-binance-ms
+  name: ci-binance-ms
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ci-binance-ms
+  template:
+    metadata:
+      labels:
+        app: ci-binance-ms
+    spec:
+      containers:
+        - name: ci-binance-ms
+          image: ivanovdv/ci-binance-ms:latest
+          imagePullPolicy: Always
+          envFrom:
+            - secretRef:
+                name: ci-binance-ms-env
