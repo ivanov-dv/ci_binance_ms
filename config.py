@@ -52,3 +52,8 @@ TIMEOUT_CUMULATIVE_WEIGHT = 1
 HOSTS
 '''
 REPO_HOST = os.getenv('REPO_HOST')
+
+'''
+SENTRY
+'''
+SENTRY_DSN = os.getenv('SENTRY_DSN')

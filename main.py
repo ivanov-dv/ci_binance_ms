@@ -1,8 +1,11 @@
 import asyncio
 import logging
 
+import sentry_sdk
+import uvicorn
 from fastapi import HTTPException
 
+from config import SENTRY_DSN
 from engine import app, monitoring
 
 
@@ -33,5 +36,6 @@ async def get_metrics():
 
 
 if __name__ == "__main__":
-    import uvicorn
+    if SENTRY_DSN:
+        sentry_sdk.init(SENTRY_DSN)
     uvicorn.run(app, host="0.0.0.0", port=8002)
