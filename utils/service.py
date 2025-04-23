@@ -63,7 +63,6 @@ class Monitoring:
 
     async def get_list_tickers(self):
         while True:
-            print('get_list_tickers')
             loop = asyncio.get_event_loop()
             with ThreadPoolExecutor() as pool:
                 try:
@@ -73,7 +72,6 @@ class Monitoring:
                             self.list_tickers.add(ticker_data['symbol'])
                 except Exception as e:
                     logging.error(f'get_list_tickers error: {e}')
-            print(f'{self.list_tickers=}')
             await asyncio.sleep(86400)
 
     async def reset_weight(self):
@@ -95,6 +93,7 @@ class Monitoring:
                     return request
         except Exception as e:
             logging.error(f'{self.__class__.__qualname__} - {e}')
+        return None
 
     async def _percent_of_point_check_change(self, request: UniqueUserRequest,
                                              response: dict) -> UniqueUserRequest | None:
@@ -112,6 +111,7 @@ class Monitoring:
                     return request
         except Exception as e:
             logging.error(f'{self.__class__.__qualname__} - {e}')
+        return None
 
     async def _percent_of_time_check_change(self, request: UniqueUserRequest,
                                             response: dict) -> UniqueUserRequest | None:
@@ -128,6 +128,7 @@ class Monitoring:
                     return request
         except Exception as e:
             logging.error(f'{self.__class__.__qualname__} - {e}')
+        return None
 
     async def _get_response_price_or_percent_of_point(self, request: RequestForServer, delay: float) -> None:
         await asyncio.sleep(delay)
@@ -191,6 +192,7 @@ class Monitoring:
             return await self._percent_of_point_check_change(request, response_from_server)
         if isinstance(request.request_data, PercentOfTime):
             return await self._percent_of_time_check_change(request, response_from_server)
+        return None
 
     async def get_response_from_server(self, requests_for_server: list[RequestForServer]) -> dict:
         """
@@ -236,15 +238,12 @@ class Monitoring:
         Запускает мониторинг запросов не чаще 1 раза в минуту
         """
 
-        print('start check_all_changes')
-
         while True:
 
             if time.time() - self._start < 60:
                 await asyncio.sleep(1)
                 continue
 
-            print(await self.get_metrics())
             self._start = time.time()
             self.count_iteration += 1
 
