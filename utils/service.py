@@ -63,6 +63,7 @@ class Monitoring:
 
     async def get_list_tickers(self):
         while True:
+            print('get_list_tickers')
             loop = asyncio.get_event_loop()
             with ThreadPoolExecutor() as pool:
                 try:
@@ -72,6 +73,7 @@ class Monitoring:
                             self.list_tickers.add(ticker_data['symbol'])
                 except Exception as e:
                     logging.error(f'get_list_tickers error: {e}')
+            print(f'{self.list_tickers=}')
             await asyncio.sleep(86400)
 
     async def reset_weight(self):
@@ -234,7 +236,11 @@ class Monitoring:
         Запускает мониторинг запросов не чаще 1 раза в минуту
         """
 
+        print('start check_all_changes')
+
         while True:
+            print(self.get_metrics())
+
             if time.time() - self._start < 60:
                 await asyncio.sleep(1)
                 continue
