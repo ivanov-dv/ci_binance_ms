@@ -239,12 +239,12 @@ class Monitoring:
         print('start check_all_changes')
 
         while True:
-            print(self.get_metrics())
 
             if time.time() - self._start < 60:
                 await asyncio.sleep(1)
                 continue
 
+            print(await self.get_metrics())
             self._start = time.time()
             self.count_iteration += 1
 
