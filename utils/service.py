@@ -249,8 +249,9 @@ class Monitoring:
 
             try:
                 await self.repo.load_requests_from_remote_repo()
-            except httpx.ConnectError:
-                logging.error('Error load_requests_from_remote_repo. Retrying...')
+            except (httpx.ConnectError, httpx.ConnectTimeout):
+                logging.exception('Error load_requests_from_remote_repo. Retrying...')
+                await asyncio.sleep(1)
                 continue
 
             user_requests = await self.repo.get_unique_user_requests()
