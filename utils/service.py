@@ -271,4 +271,8 @@ class Monitoring:
                         except Exception as e:
                             logging.error(f'Error send message in RabbitMQ {user} {request.request_id}: {e}')
                         else:
-                            await self.repo.delete_request_for_user(user, request.request_id)
+                            try:
+                                await self.repo.delete_request_for_user(user, request.request_id)
+                            except httpx.ReadTimeout:
+                                logging.exception(f'Retry delete_request_for_user')
+                                await self.repo.delete_request_for_user(user, request.request_id)
