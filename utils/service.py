@@ -253,26 +253,25 @@ class Monitoring:
                 logging.exception('Error load_requests_from_remote_repo. Retrying...')
                 await asyncio.sleep(1)
                 continue
+            
+            try:
+                user_requests = await self.repo.get_unique_user_requests()
+                self.len_unique_requests_user = len(user_requests)
+                unique_requests_for_server = await self.repo.get_unique_requests_for_server()
+                self.len_unique_requests_server = len(unique_requests_for_server)
+                response_from_server = await self.get_response_from_server(unique_requests_for_server)
 
-            user_requests = await self.repo.get_unique_user_requests()
-            self.len_unique_requests_user = len(user_requests)
-            unique_requests_for_server = await self.repo.get_unique_requests_for_server()
-            self.len_unique_requests_server = len(unique_requests_for_server)
-            response_from_server = await self.get_response_from_server(unique_requests_for_server)
-
-            for request in user_requests:
-                if await self._check_change(request, response_from_server):
-                    users = await self.repo.get_users_for_request(request.request_id)
-                    if not users:
-                        continue
-                    for user in users:
-                        try:
-                            await self.broker.send_message(f'{user}__{str(request)}')
-                        except Exception as e:
-                            logging.error(f'Error send message in RabbitMQ {user} {request.request_id}: {e}')
-                        else:
+                for request in user_requests:
+                    if await self._check_change(request, response_from_server):
+                        users = await self.repo.get_users_for_request(request.request_id)
+                        if not users:
+                            continue
+                        for user in users:
                             try:
+                                await self.broker.send_message(f'{user}__{str(request)}')
+                            except Exception as e:
+                                logging.error(f'Error send message in RabbitMQ {user} {request.request_id}: {e}')
+                            else:
                                 await self.repo.delete_request_for_user(user, request.request_id)
-                            except httpx.ReadTimeout:
-                                logging.exception(f'Retry delete_request_for_user')
-                                await self.repo.delete_request_for_user(user, request.request_id)
+            except Exception as e:
+                logging.error(f'Error in check_all_changes: {e}')
